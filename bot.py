@@ -1,27 +1,8 @@
-import logging
 import asyncio
-import sys
-import threading
-from aiohttp import web
-from aiogram import Bot, Dispatcher, types
-from aiogram.contrib.middlewares.logging import LoggingMiddleware
+import logging
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.utils import executor
-
-def run_web_server():
-    app = web.Application()
-    async def handle(request):
-        return web.Response(text="Bot is running")
-    app.router.add_get('/', handle)
-    web.run_app(app, port=10000)
-
-threading.Thread(target=run_web_server, daemon=True).start()
-
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
-
-if sys.platform == 'win32':
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 BOT_TOKEN = "8239867136:AAG32C-kC6HvDHQ2Z8rIVuufL9gCSIOiBrk"
 ADMIN_ID = 8438380074
@@ -30,48 +11,49 @@ CHANNEL_ID = "-1003720906218"
 logging.basicConfig(level=logging.INFO)
 
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(bot)
-dp.middleware.setup(LoggingMiddleware())
+dp = Dispatcher()
 
 pending_posts = {}
 moderation_mode = True
 
 def get_moderation_keyboard(message_id: int):
-    keyboard = InlineKeyboardMarkup(row_width=2)
-    keyboard.add(
-        InlineKeyboardButton("✅ Опубликовать", callback_data=f"publish_{message_id}"),
-        InlineKeyboardButton("❌ Отклонить", callback_data=f"reject_{message_id}")
-    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="✅ Опубликовать", callback_data=f"publish_{message_id}"),
+            InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_{message_id}")
+        ]
+    ])
     return keyboard
 
 def get_admin_panel():
     mode_text = "✅ Модерация (кнопки)" if moderation_mode else "📢 Прямой постинг"
-    keyboard = InlineKeyboardMarkup()
-    keyboard.add(InlineKeyboardButton(f"🔄 Режим: {mode_text}", callback_data="toggle_mode"))
-    keyboard.add(InlineKeyboardButton("📊 Статистика", callback_data="show_stats"))
-    keyboard.add(InlineKeyboardButton("ℹ️ Помощь", callback_data="help"))
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"🔄 Режим: {mode_text}", callback_data="toggle_mode")],
+        [InlineKeyboardButton(text="📊 Статистика", callback_data="show_stats")],
+        [InlineKeyboardButton(text="ℹ️ Помощь", callback_data="help")]
+    ])
     return keyboard
 
-@dp.message_handler(commands=['start'])
+@dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     if message.from_user.id == ADMIN_ID:
-        await message.reply(
+        await message.answer(
             "👋 Панель управления ботом\n\n"
             "Текущий режим: " + ("✅ Модерация (ты проверяешь посты)" if moderation_mode else "📢 Прямой постинг (посты сразу в канал)"),
             reply_markup=get_admin_panel()
         )
     else:
-        await message.reply(
+        await message.answer(
             "📝 Привет! Я бот для предложки.\n\n"
             "Отправь мне текст, фото или видео, которые хочешь предложить для канала."
         )
 
-@dp.message_handler(commands=['admin'])
+@dp.message(Command("admin"))
 async def admin_panel(message: types.Message):
     if message.from_user.id == ADMIN_ID:
-        await message.reply("Панель управления:", reply_markup=get_admin_panel())
+        await message.answer("Панель управления:", reply_markup=get_admin_panel())
 
-@dp.callback_query_handler(lambda c: c.data == 'toggle_mode')
+@dp.callback_query(F.data == "toggle_mode")
 async def toggle_mode(callback: types.CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
         await callback.answer("⛔ Не для тебя!", show_alert=True)
@@ -85,10 +67,10 @@ async def toggle_mode(callback: types.CallbackQuery):
     else:
         text = "📢 Включен режим прямого постинга\nТеперь все сообщения будут сразу публиковаться в канал"
     
-    await bot.edit_message_text(text, callback.message.chat.id, callback.message.message_id, reply_markup=get_admin_panel())
+    await callback.message.edit_text(text, reply_markup=get_admin_panel())
     await callback.answer()
 
-@dp.callback_query_handler(lambda c: c.data == 'show_stats')
+@dp.callback_query(F.data == "show_stats")
 async def show_stats_callback(callback: types.CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
         await callback.answer("⛔ Не для тебя!", show_alert=True)
@@ -101,10 +83,10 @@ async def show_stats_callback(callback: types.CallbackQuery):
         f"• ID канала: {CHANNEL_ID}"
     )
     
-    await bot.edit_message_text(stats_text, callback.message.chat.id, callback.message.message_id, reply_markup=get_admin_panel())
+    await callback.message.edit_text(stats_text, reply_markup=get_admin_panel())
     await callback.answer()
 
-@dp.callback_query_handler(lambda c: c.data == 'help')
+@dp.callback_query(F.data == "help")
 async def help_callback(callback: types.CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
         await callback.answer("⛔ Не для тебя!", show_alert=True)
@@ -123,10 +105,10 @@ async def help_callback(callback: types.CallbackQuery):
         "• Помощь - это сообщение"
     )
     
-    await bot.edit_message_text(help_text, callback.message.chat.id, callback.message.message_id, reply_markup=get_admin_panel())
+    await callback.message.edit_text(help_text, reply_markup=get_admin_panel())
     await callback.answer()
 
-@dp.message_handler(content_types=['text', 'photo', 'video', 'document', 'audio'])
+@dp.message()
 async def handle_user_message(message: types.Message):
     user = message.from_user
     
@@ -136,39 +118,14 @@ async def handle_user_message(message: types.Message):
     global moderation_mode
     
     if moderation_mode:
-        await message.reply("⏳ Спасибо! Твое сообщение отправлено на модерацию.")
+        await message.answer("⏳ Спасибо! Твое сообщение отправлено на модерацию.")
         
         try:
-            if message.photo:
-                caption = f"📨 Новый пост от @{user.username or user.full_name} (ID: {user.id})\n\n{message.caption or ''}"
-                sent_message = await bot.send_photo(
-                    ADMIN_ID,
-                    message.photo[-1].file_id,
-                    caption=caption,
-                    reply_markup=get_moderation_keyboard(message.message_id)
-                )
-            elif message.video:
-                caption = f"📨 Новый пост от @{user.username or user.full_name} (ID: {user.id})\n\n{message.caption or ''}"
-                sent_message = await bot.send_video(
-                    ADMIN_ID,
-                    message.video.file_id,
-                    caption=caption,
-                    reply_markup=get_moderation_keyboard(message.message_id)
-                )
-            elif message.document:
-                caption = f"📨 Новый пост от @{user.username or user.full_name} (ID: {user.id})\n\n{message.caption or ''}"
-                sent_message = await bot.send_document(
-                    ADMIN_ID,
-                    message.document.file_id,
-                    caption=caption,
-                    reply_markup=get_moderation_keyboard(message.message_id)
-                )
-            else:
-                sent_message = await bot.send_message(
-                    ADMIN_ID,
-                    f"📨 Новый пост от @{user.username or user.full_name} (ID: {user.id})\n\n{message.text}",
-                    reply_markup=get_moderation_keyboard(message.message_id)
-                )
+            sent_message = await message.copy_to(
+                chat_id=ADMIN_ID,
+                caption=f"📨 Новый пост от @{user.username or user.full_name} (ID: {user.id})\n\n{message.caption or ''}",
+                reply_markup=get_moderation_keyboard(message.message_id)
+            )
             
             pending_posts[sent_message.message_id] = {
                 'user_id': user.id,
@@ -177,29 +134,21 @@ async def handle_user_message(message: types.Message):
             
         except Exception as e:
             logging.error(f"Ошибка при отправке админу: {e}")
-            await message.reply("❌ Произошла ошибка. Попробуй позже.")
+            await message.answer("❌ Произошла ошибка. Попробуй позже.")
     
     else:
         try:
-            if message.photo:
-                await bot.send_photo(CHANNEL_ID, message.photo[-1].file_id, caption=message.caption)
-            elif message.video:
-                await bot.send_video(CHANNEL_ID, message.video.file_id, caption=message.caption)
-            elif message.document:
-                await bot.send_document(CHANNEL_ID, message.document.file_id, caption=message.caption)
-            else:
-                await bot.send_message(CHANNEL_ID, message.text)
-            
-            await message.reply("✅ Твое сообщение опубликовано в канале! Спасибо!")
+            await message.copy_to(chat_id=CHANNEL_ID)
+            await message.answer("✅ Твое сообщение опубликовано в канале! Спасибо!")
         except Exception as e:
             logging.error(f"Ошибка публикации в канал: {e}")
-            await message.reply("❌ Не удалось опубликовать сообщение. Попробуй позже.")
+            await message.answer("❌ Не удалось опубликовать сообщение. Попробуй позже.")
             await bot.send_message(
                 ADMIN_ID,
                 f"⚠️ Ошибка публикации в канал!\nСообщение от @{user.username or user.full_name} не удалось опубликовать."
             )
 
-@dp.callback_query_handler(lambda c: c.data.startswith('publish_') or c.data.startswith('reject_'))
+@dp.callback_query(F.data.startswith(('publish_', 'reject_')))
 async def handle_moderation(callback: types.CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
         await callback.answer("⛔ Это не для тебя!", show_alert=True)
@@ -212,53 +161,43 @@ async def handle_moderation(callback: types.CallbackQuery):
         await callback.answer("❌ Пост уже обработан или устарел", show_alert=True)
         return
     
+    await callback.message.edit_reply_markup(reply_markup=None)
+    
     if action == 'publish':
         try:
-            original_msg = post_data['original_message']
-            
-            if original_msg.photo:
-                await bot.send_photo(CHANNEL_ID, original_msg.photo[-1].file_id, caption=original_msg.caption)
-            elif original_msg.video:
-                await bot.send_video(CHANNEL_ID, original_msg.video.file_id, caption=original_msg.caption)
-            elif original_msg.document:
-                await bot.send_document(CHANNEL_ID, original_msg.document.file_id, caption=original_msg.caption)
-            else:
-                await bot.send_message(CHANNEL_ID, original_msg.text)
-            
-            await bot.edit_message_text(f"{callback.message.text}\n\n✅ Пост опубликован в канале!", 
-                                        callback.message.chat.id, 
-                                        callback.message.message_id)
-            
+            await post_data['original_message'].copy_to(chat_id=CHANNEL_ID)
+            await callback.message.edit_text(f"{callback.message.text}\n\n✅ Пост опубликован в канале!")
             try:
-                await bot.send_message(post_data['user_id'], "✅ Ура! Твой пост опубликован в канале. Спасибо!")
+                await bot.send_message(
+                    chat_id=post_data['user_id'],
+                    text="✅ Ура! Твой пост опубликован в канале. Спасибо!"
+                )
             except:
                 pass
-                
             await callback.answer("✅ Опубликовано!")
-            
         except Exception as e:
             logging.error(f"Ошибка публикации: {e}")
-            await bot.edit_message_text(f"{callback.message.text}\n\n❌ Ошибка публикации: {e}", 
-                                        callback.message.chat.id, 
-                                        callback.message.message_id)
+            await callback.message.edit_text(f"{callback.message.text}\n\n❌ Ошибка публикации: {e}")
             await callback.answer("❌ Ошибка!", show_alert=True)
     
     elif action == 'reject':
-        await bot.edit_message_text(f"{callback.message.text}\n\n❌ Пост отклонен", 
-                                    callback.message.chat.id, 
-                                    callback.message.message_id)
-        
+        await callback.message.edit_text(f"{callback.message.text}\n\n❌ Пост отклонен")
         try:
-            await bot.send_message(post_data['user_id'], "😔 К сожалению, твой пост не прошел модерацию.")
+            await bot.send_message(
+                chat_id=post_data['user_id'],
+                text="😔 К сожалению, твой пост не прошел модерацию."
+            )
         except:
             pass
-        
         await callback.answer("❌ Отклонено")
     
     if callback.message.message_id in pending_posts:
         del pending_posts[callback.message.message_id]
 
-if __name__ == "__main__":
+async def main():
     print("🚀 Бот запущен!")
     print(f"Режим при запуске: {'Модерация' if moderation_mode else 'Прямой постинг'}")
-    executor.start_polling(dp, skip_updates=True)
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
