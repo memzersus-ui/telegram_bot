@@ -1,8 +1,12 @@
 import logging
+import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.middlewares.logging import LoggingMiddleware
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils import executor
+
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
 
 BOT_TOKEN = "8239867136:AAG32C-kC6HvDHQ2Z8rIVuufL9gCSIOiBrk"
 ADMIN_ID = 8438380074
