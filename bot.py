@@ -1,10 +1,21 @@
 import logging
 import asyncio
 import sys
+import threading
+from aiohttp import web
 from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.middlewares.logging import LoggingMiddleware
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils import executor
+
+def run_web_server():
+    app = web.Application()
+    async def handle(request):
+        return web.Response(text="Bot is running")
+    app.router.add_get('/', handle)
+    web.run_app(app, port=10000)
+
+threading.Thread(target=run_web_server, daemon=True).start()
 
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
