@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import sys
 from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.middlewares.logging import LoggingMiddleware
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -7,6 +8,9 @@ from aiogram.utils import executor
 
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
+
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 BOT_TOKEN = "8239867136:AAG32C-kC6HvDHQ2Z8rIVuufL9gCSIOiBrk"
 ADMIN_ID = 8438380074
@@ -70,7 +74,7 @@ async def toggle_mode(callback: types.CallbackQuery):
     else:
         text = "📢 Включен режим прямого постинга\nТеперь все сообщения будут сразу публиковаться в канал"
     
-    await bot.edit_message_text(text, chat_id=callback.message.chat.id, message_id=callback.message.message_id, reply_markup=get_admin_panel())
+    await bot.edit_message_text(text, callback.message.chat.id, callback.message.message_id, reply_markup=get_admin_panel())
     await callback.answer()
 
 @dp.callback_query_handler(lambda c: c.data == 'show_stats')
@@ -86,7 +90,7 @@ async def show_stats_callback(callback: types.CallbackQuery):
         f"• ID канала: {CHANNEL_ID}"
     )
     
-    await bot.edit_message_text(stats_text, chat_id=callback.message.chat.id, message_id=callback.message.message_id, reply_markup=get_admin_panel())
+    await bot.edit_message_text(stats_text, callback.message.chat.id, callback.message.message_id, reply_markup=get_admin_panel())
     await callback.answer()
 
 @dp.callback_query_handler(lambda c: c.data == 'help')
@@ -108,7 +112,7 @@ async def help_callback(callback: types.CallbackQuery):
         "• Помощь - это сообщение"
     )
     
-    await bot.edit_message_text(help_text, chat_id=callback.message.chat.id, message_id=callback.message.message_id, reply_markup=get_admin_panel())
+    await bot.edit_message_text(help_text, callback.message.chat.id, callback.message.message_id, reply_markup=get_admin_panel())
     await callback.answer()
 
 @dp.message_handler(content_types=['text', 'photo', 'video', 'document', 'audio'])
@@ -127,31 +131,31 @@ async def handle_user_message(message: types.Message):
             if message.photo:
                 caption = f"📨 Новый пост от @{user.username or user.full_name} (ID: {user.id})\n\n{message.caption or ''}"
                 sent_message = await bot.send_photo(
-                    chat_id=ADMIN_ID,
-                    photo=message.photo[-1].file_id,
+                    ADMIN_ID,
+                    message.photo[-1].file_id,
                     caption=caption,
                     reply_markup=get_moderation_keyboard(message.message_id)
                 )
             elif message.video:
                 caption = f"📨 Новый пост от @{user.username or user.full_name} (ID: {user.id})\n\n{message.caption or ''}"
                 sent_message = await bot.send_video(
-                    chat_id=ADMIN_ID,
-                    video=message.video.file_id,
+                    ADMIN_ID,
+                    message.video.file_id,
                     caption=caption,
                     reply_markup=get_moderation_keyboard(message.message_id)
                 )
             elif message.document:
                 caption = f"📨 Новый пост от @{user.username or user.full_name} (ID: {user.id})\n\n{message.caption or ''}"
                 sent_message = await bot.send_document(
-                    chat_id=ADMIN_ID,
-                    document=message.document.file_id,
+                    ADMIN_ID,
+                    message.document.file_id,
                     caption=caption,
                     reply_markup=get_moderation_keyboard(message.message_id)
                 )
             else:
                 sent_message = await bot.send_message(
-                    chat_id=ADMIN_ID,
-                    text=f"📨 Новый пост от @{user.username or user.full_name} (ID: {user.id})\n\n{message.text}",
+                    ADMIN_ID,
+                    f"📨 Новый пост от @{user.username or user.full_name} (ID: {user.id})\n\n{message.text}",
                     reply_markup=get_moderation_keyboard(message.message_id)
                 )
             
@@ -211,14 +215,11 @@ async def handle_moderation(callback: types.CallbackQuery):
                 await bot.send_message(CHANNEL_ID, original_msg.text)
             
             await bot.edit_message_text(f"{callback.message.text}\n\n✅ Пост опубликован в канале!", 
-                                        chat_id=callback.message.chat.id, 
-                                        message_id=callback.message.message_id)
+                                        callback.message.chat.id, 
+                                        callback.message.message_id)
             
             try:
-                await bot.send_message(
-                    chat_id=post_data['user_id'],
-                    text="✅ Ура! Твой пост опубликован в канале. Спасибо!"
-                )
+                await bot.send_message(post_data['user_id'], "✅ Ура! Твой пост опубликован в канале. Спасибо!")
             except:
                 pass
                 
@@ -227,20 +228,17 @@ async def handle_moderation(callback: types.CallbackQuery):
         except Exception as e:
             logging.error(f"Ошибка публикации: {e}")
             await bot.edit_message_text(f"{callback.message.text}\n\n❌ Ошибка публикации: {e}", 
-                                        chat_id=callback.message.chat.id, 
-                                        message_id=callback.message.message_id)
+                                        callback.message.chat.id, 
+                                        callback.message.message_id)
             await callback.answer("❌ Ошибка!", show_alert=True)
     
     elif action == 'reject':
         await bot.edit_message_text(f"{callback.message.text}\n\n❌ Пост отклонен", 
-                                    chat_id=callback.message.chat.id, 
-                                    message_id=callback.message.message_id)
+                                    callback.message.chat.id, 
+                                    callback.message.message_id)
         
         try:
-            await bot.send_message(
-                chat_id=post_data['user_id'],
-                text="😔 К сожалению, твой пост не прошел модерацию."
-            )
+            await bot.send_message(post_data['user_id'], "😔 К сожалению, твой пост не прошел модерацию.")
         except:
             pass
         
